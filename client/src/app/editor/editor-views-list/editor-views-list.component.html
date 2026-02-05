@@ -1,39 +1,96 @@
-<div *ngIf="views && views.length <= 0">
-    <br>
+<div class="views-actions">
+    <button mat-icon-button matTooltip="{{'editor.view-folder-add' | translate}}" (click)="onAddFolder()">
+        <mat-icon>create_new_folder</mat-icon>
+    </button>
 </div>
-<div *ngFor="let item of getViewsSorted()"
-     (click)="onSelectView(item, false)"
-     [ngClass]="{'leftbar-item-active': isViewActive(item)}"
-     class="leftbar-item pointer">
-    <mat-icon *ngIf="!item.type || item.type === svgViewType"
-              matTooltip="{{'editor.view-svg' | translate}}"
-              class="leftbar-item-type item-icon-view">
-        wysiwyg
-    </mat-icon>
-    <mat-icon *ngIf="item.type === cardViewType"
-              matTooltip="{{'editor.view-cards' | translate}}"
-              class="leftbar-item-type item-icon-cards">
-        grid_view
-    </mat-icon>
-    <mat-icon *ngIf="item.type === mapsViewType"
-              matTooltip="{{'editor.view-maps' | translate}}"
-              class="leftbar-item-type item-icon-maps">
-        map
-    </mat-icon>
-    <span class="view-item-text">
-        {{item.name}}
-    </span>
-    <mat-icon aria-label="More"
-              [matMenuTriggerFor]="menuview">
-        more_vert
-    </mat-icon>
-    <mat-menu #menuview="matMenu"
-              class="leftbar-item-menu">
-        <button mat-menu-item (click)="onDeleteView(item)">{{'editor.view-delete' | translate}}</button>
-        <button mat-menu-item (click)="onRenameView(item)">{{'editor.view-rename' | translate}}</button>
-        <button mat-menu-item (click)="onPropertyView(item)">{{'editor.view-property' | translate}}</button>
-        <button mat-menu-item (click)="onCloneView(item)" *ngIf="item.type !== cardViewType && item.type !== mapsViewType">{{'editor.view-clone' | translate}}</button>
-        <button mat-menu-item (click)="onExportView(item)" *ngIf="item.type !== cardViewType && item.type !== mapsViewType">{{'editor.view-export' | translate}}</button>
-        <button mat-menu-item (click)="onCleanView(item)" *ngIf="item.type !== cardViewType && item.type !== mapsViewType">{{'editor.view-clean' | translate}}</button>
-    </mat-menu>
+
+<div class="views-drop-zone"
+     id="views-root-drop-list"
+     cdkDropList
+     [cdkDropListData]="rootViews"
+     [cdkDropListConnectedTo]="getDropListIds()"
+     (cdkDropListDropped)="onDropRoot($event)">
+    <div *ngIf="views && views.length <= 0">
+        <br>
+    </div>
+
+    <ng-container *ngFor="let item of rootViews">
+        <div cdkDrag class="leftbar-item pointer"
+             (click)="onSelectView(item, false)"
+             [ngClass]="{'leftbar-item-active': isViewActive(item)}">
+            <mat-icon *ngIf="!item.type || item.type === svgViewType"
+                      matTooltip="{{'editor.view-svg' | translate}}"
+                      class="leftbar-item-type item-icon-view">
+                wysiwyg
+            </mat-icon>
+            <mat-icon *ngIf="item.type === cardViewType"
+                      matTooltip="{{'editor.view-cards' | translate}}"
+                      class="leftbar-item-type item-icon-cards">
+                grid_view
+            </mat-icon>
+            <mat-icon *ngIf="item.type === mapsViewType"
+                      matTooltip="{{'editor.view-maps' | translate}}"
+                      class="leftbar-item-type item-icon-maps">
+                map
+            </mat-icon>
+            <span class="view-item-text">{{item.name}}</span>
+            <mat-icon aria-label="More" [matMenuTriggerFor]="menuview">more_vert</mat-icon>
+            <mat-menu #menuview="matMenu" class="leftbar-item-menu">
+                <button mat-menu-item (click)="onDeleteView(item)">{{'editor.view-delete' | translate}}</button>
+                <button mat-menu-item (click)="onRenameView(item)">{{'editor.view-rename' | translate}}</button>
+                <button mat-menu-item (click)="onPropertyView(item)">{{'editor.view-property' | translate}}</button>
+                <button mat-menu-item (click)="onCloneView(item)" *ngIf="item.type !== cardViewType && item.type !== mapsViewType">{{'editor.view-clone' | translate}}</button>
+                <button mat-menu-item (click)="onExportView(item)" *ngIf="item.type !== cardViewType && item.type !== mapsViewType">{{'editor.view-export' | translate}}</button>
+                <button mat-menu-item (click)="onCleanView(item)" *ngIf="item.type !== cardViewType && item.type !== mapsViewType">{{'editor.view-clean' | translate}}</button>
+            </mat-menu>
+        </div>
+    </ng-container>
+</div>
+
+<div *ngFor="let folder of getFoldersSorted()" class="folder-box">
+    <div class="folder-header">
+        <mat-icon class="folder-icon">folder</mat-icon>
+        <span class="folder-name">{{folder.name}}</span>
+        <mat-icon class="folder-action" matTooltip="{{'editor.view-folder-rename' | translate}}" (click)="onRenameFolder(folder)">edit</mat-icon>
+        <mat-icon class="folder-action" matTooltip="{{'editor.view-folder-delete' | translate}}" (click)="onDeleteFolder(folder)">delete</mat-icon>
+    </div>
+
+    <div class="views-drop-zone folder-drop-zone"
+         [id]="getFolderDropListId(folder.id)"
+         cdkDropList
+         [cdkDropListData]="folderViews[folder.id]"
+         [cdkDropListConnectedTo]="getDropListIds()"
+         (cdkDropListDropped)="onDropFolder(folder, $event)">
+        <ng-container *ngFor="let item of folderViews[folder.id]">
+            <div cdkDrag class="leftbar-item pointer"
+                 (click)="onSelectView(item, false)"
+                 [ngClass]="{'leftbar-item-active': isViewActive(item)}">
+                <mat-icon *ngIf="!item.type || item.type === svgViewType"
+                          matTooltip="{{'editor.view-svg' | translate}}"
+                          class="leftbar-item-type item-icon-view">
+                    wysiwyg
+                </mat-icon>
+                <mat-icon *ngIf="item.type === cardViewType"
+                          matTooltip="{{'editor.view-cards' | translate}}"
+                          class="leftbar-item-type item-icon-cards">
+                    grid_view
+                </mat-icon>
+                <mat-icon *ngIf="item.type === mapsViewType"
+                          matTooltip="{{'editor.view-maps' | translate}}"
+                          class="leftbar-item-type item-icon-maps">
+                    map
+                </mat-icon>
+                <span class="view-item-text">{{item.name}}</span>
+                <mat-icon aria-label="More" [matMenuTriggerFor]="menuview">more_vert</mat-icon>
+                <mat-menu #menuview="matMenu" class="leftbar-item-menu">
+                    <button mat-menu-item (click)="onDeleteView(item)">{{'editor.view-delete' | translate}}</button>
+                    <button mat-menu-item (click)="onRenameView(item)">{{'editor.view-rename' | translate}}</button>
+                    <button mat-menu-item (click)="onPropertyView(item)">{{'editor.view-property' | translate}}</button>
+                    <button mat-menu-item (click)="onCloneView(item)" *ngIf="item.type !== cardViewType && item.type !== mapsViewType">{{'editor.view-clone' | translate}}</button>
+                    <button mat-menu-item (click)="onExportView(item)" *ngIf="item.type !== cardViewType && item.type !== mapsViewType">{{'editor.view-export' | translate}}</button>
+                    <button mat-menu-item (click)="onCleanView(item)" *ngIf="item.type !== cardViewType && item.type !== mapsViewType">{{'editor.view-clean' | translate}}</button>
+                </mat-menu>
+            </div>
+        </ng-container>
+    </div>
 </div>

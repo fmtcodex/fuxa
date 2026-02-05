@@ -34,10 +34,12 @@ import { MatStepperModule } from '@angular/material/stepper';
 import { MatMomentDateModule } from '@angular/material-moment-adapter';
 
 import { CdkTableModule } from '@angular/cdk/table';
+import { DragDropModule } from '@angular/cdk/drag-drop';
 
 @NgModule({
     imports: [
         CdkTableModule,
+        DragDropModule,
         MatAutocompleteModule,
         MatButtonModule,
         MatButtonToggleModule,
@@ -72,6 +74,7 @@ import { CdkTableModule } from '@angular/cdk/table';
     ],
     exports: [
         CdkTableModule,
+        DragDropModule,
         MatAutocompleteModule,
         MatButtonModule,
         MatButtonToggleModule,
