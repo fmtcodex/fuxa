@@ -66,6 +66,7 @@
                     <div appResize class="leftbar-panel view-panel" [(height)]="panelsState.panelViewHeight" [style.height.px]="panelsState.panelViewHeight"
                         (changeEnd)="savePanelState()">
                         <app-editor-views-list [(views)]="hmi.views"
+                                               [viewFolders]="hmi.viewFolders"
                                                [select]="currentView"
                                                (selected)="onSelectView($event, false)"
                                                (viewPropertyChanged)="onViewPropertyChanged($event)"

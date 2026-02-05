@@ -4,7 +4,7 @@ import { Observable, Subject, firstValueFrom } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import { ProjectData, ProjectDataCmdType, UploadFile } from '../_models/project';
-import { View, LayoutSettings, DaqQuery, ViewType } from '../_models/hmi';
+import { View, LayoutSettings, DaqQuery, ViewType, ViewFolder } from '../_models/hmi';
 import { Chart } from '../_models/chart';
 import { Graph } from '../_models/graph';
 import { Alarm, AlarmBaseType, AlarmQuery, AlarmsFilter } from '../_models/alarm';
@@ -352,6 +352,16 @@ export class ProjectService {
             }
         }
         return null;
+    }
+
+
+    setViewFolders(folders: ViewFolder[]) {
+        this.projectData.hmi.viewFolders = folders || [];
+        this.save();
+    }
+
+    getViewFolders(): ViewFolder[] {
+        return this.projectData?.hmi?.viewFolders || [];
     }
 
     /**
@@ -1029,6 +1039,9 @@ export class ProjectService {
             result = false;
         } else if (Utils.isNullOrUndefined(prj.devices)) {
             result = false;
+        }
+        if (result && !Array.isArray(prj.hmi.viewFolders)) {
+            prj.hmi.viewFolders = [];
         }
         if (!result) {
             this.notifyError('msg.project-format-error');

@@ -1,4 +1,53 @@
 :host {
+    .views-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 4px;
+    }
+
+    .views-drop-zone {
+        min-height: 8px;
+    }
+
+    .folder-box {
+        margin-top: 6px;
+        border: 1px solid var(--toolboxItemActiveBackground);
+        border-radius: 4px;
+    }
+
+    .folder-header {
+        display: flex;
+        align-items: center;
+        padding: 2px 4px;
+        background-color: rgba(0, 0, 0, 0.04);
+    }
+
+    .folder-icon {
+        font-size: 16px;
+        line-height: 16px;
+        width: 16px;
+        height: 16px;
+    }
+
+    .folder-name {
+        flex: 1;
+        margin-left: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .folder-action {
+        cursor: pointer;
+        font-size: 16px;
+        width: 18px;
+        height: 18px;
+    }
+
+    .folder-drop-zone {
+        padding: 2px;
+    }
+
     .leftbar-item {
         padding: 3px 0px 1px 0px;
         display: flow-root;

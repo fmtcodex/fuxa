@@ -8,6 +8,15 @@ export class Hmi {
     layout: LayoutSettings = new LayoutSettings();
     /** Views list of hmi project */
     views: View[] = [];
+    /** Optional folders to organize views in editor */
+    viewFolders: ViewFolder[] = [];
+}
+
+export class ViewFolder {
+    /** Folder id, random number */
+    id = '';
+    /** Folder name */
+    name = '';
 }
 
 export class View {
@@ -27,6 +36,8 @@ export class View {
     type: ViewType;
     /** Property with events of view like Open or Close */
     property: ViewProperty;
+    /** Optional folder reference used by editor to group views */
+    folderId?: string;
 
     constructor(id?: string, type?: ViewType, name?: string) {
         this.id = id;
@@ -763,4 +774,3 @@ export interface VideoOptions {
     initImage?: string;
     showControls?: boolean;
 }
-
