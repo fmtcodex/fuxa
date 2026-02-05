@@ -520,6 +520,9 @@ export class DeviceMapComponent implements OnInit, OnDestroy, AfterViewInit {
                         }
                         device.property.socketReuse = tempdevice.property.socketReuse;
                         device.property.forceFC16 = tempdevice.property.forceFC16;
+                        device.property.broker_mode = tempdevice.property.broker_mode;
+                        device.property.broker_port = tempdevice.property.broker_port;
+                        device.property.modbus_timeout_ms = tempdevice.property.modbus_timeout_ms;
                     }
                     this.projectService.setDevice(device, olddevice, result.security);
                 }

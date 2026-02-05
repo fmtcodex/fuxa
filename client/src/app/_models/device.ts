@@ -195,6 +195,12 @@ export class DeviceNetProperty {
     socketReuse?: string;
     /** Force FC16 for Modbus RTU/TCP write operations */
     forceFC16?: boolean;
+    /** Modbus TCP broker mode (FUXA as listener server) */
+    broker_mode?: boolean;
+    /** Listening TCP port used in Modbus broker mode */
+    broker_port?: number;
+    /** Request timeout for Modbus operations (milliseconds) */
+    modbus_timeout_ms?: number;
     /** MELSEC */
     ascii?: boolean;
     octalIO?: boolean;
@@ -511,6 +517,7 @@ export class DevicesUtils {
             || key.endsWith('.changed')
             || key.endsWith('.restored')
             || key.endsWith('.forceFC16')
+            || key.endsWith('.broker_mode')
             || key.endsWith('.ascii')
             || key.endsWith('.octalIO');
     }
@@ -521,7 +528,9 @@ export class DevicesUtils {
             || key === 'format'
             || key === 'sysType'
             || key.endsWith('.interval')
-            || key.endsWith('.delay');
+            || key.endsWith('.delay')
+            || key.endsWith('.broker_port')
+            || key.endsWith('.modbus_timeout_ms');
     }
 
     private static parseCsvValueForKey(key: string, value: string): any {

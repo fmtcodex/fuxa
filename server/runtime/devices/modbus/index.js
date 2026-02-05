@@ -26,6 +26,10 @@ function MODBUSclient(_data, _logger, _events, _runtime) {
     var lastTimestampValue;             // Last Timestamp of asked values
     var type;
     var runtime = _runtime;             // Access runtime config such as scripts
+    var brokerServer = null;             // TCP listener when broker_mode is enabled
+    var brokerSocket = null;             // active TCP client socket (USR converter)
+    var brokerRxBuffer = Buffer.alloc(0);
+    var brokerRequest = null;            // {resolve,reject,timer,expectedMin}
 
     /**
      * initialize the modubus type
@@ -40,7 +44,7 @@ function MODBUSclient(_data, _logger, _events, _runtime) {
      */
     this.connect = function () {
         return new Promise(function (resolve, reject) {
-            if (data.property && data.property.address && (type === ModbusTypes.TCP ||
+            if (data.property && ((type === ModbusTypes.TCP && (data.property.broker_mode || data.property.address)) ||
                 (type === ModbusTypes.RTU && data.property.baudrate && data.property.databits && data.property.stopbits && data.property.parity))) {
                 try {
                     if (!client.isOpen && _checkWorking(true)) {
@@ -57,7 +61,7 @@ function MODBUSclient(_data, _logger, _events, _runtime) {
                                     client.setID(parseInt(data.property.slaveid));
                                 }
                                 // set a timout for requests default is null (no timeout)
-                                client.setTimeout(2000);
+                                client.setTimeout(parseInt(data.property.modbus_timeout_ms) || 2000);
                                 logger.info(`'${data.name}' connected!`, true);
                                 _emitStatus('connect-ok');
                                 resolve();
@@ -91,7 +95,9 @@ function MODBUSclient(_data, _logger, _events, _runtime) {
     this.disconnect = function () {
         return new Promise(function (resolve, reject) {
             _checkWorking(false);
-            if (!client.isOpen) {
+            _closeBrokerSocket();
+            _closeBrokerServer();
+            if (!client.isOpen || (type === ModbusTypes.TCP && data.property && data.property.broker_mode)) {
                 _emitStatus('connect-off');
                 _clearVarsValue();
                 resolve(true);
@@ -418,6 +424,9 @@ function MODBUSclient(_data, _logger, _events, _runtime) {
      * Don't work if PLC will disconnect
      */
     this.isConnected = function () {
+        if (type === ModbusTypes.TCP && data.property && data.property.broker_mode) {
+            return !!brokerSocket && !brokerSocket.destroyed;
+        }
         return client.isOpen;
     }
 
@@ -484,6 +493,10 @@ function MODBUSclient(_data, _logger, _events, _runtime) {
                     client.connectRTU(data.property.address, rtuOptions, callback);
                 }
             } else if (type === ModbusTypes.TCP) {
+                if (data.property.broker_mode) {
+                    _startBrokerServer(callback);
+                    return;
+                }
                 var port = 502;
                 var addr = data.property.address;
                 if (data.property.address.indexOf(':') !== -1) {
@@ -554,6 +567,9 @@ function MODBUSclient(_data, _logger, _events, _runtime) {
     var _readMemory = function (memoryAddress, start, size, vars) {
         return new Promise((resolve, reject) => {
             if (vars.length === 0) return resolve([]);
+            if (type === ModbusTypes.TCP && data.property && data.property.broker_mode) {
+                return _readMemoryBroker(memoryAddress, start, size, vars).then(resolve).catch(reject);
+            }
             // define read function
             if (memoryAddress === ModbusMemoryAddress.CoilStatus) {                      // Coil Status (Read/Write 000001-065536)
                 client.readCoils(start, size).then(res => {
@@ -634,6 +650,9 @@ function MODBUSclient(_data, _logger, _events, _runtime) {
      */
     var _writeMemory = function (memoryAddress, start, value) {
         return new Promise((resolve, reject) => {
+            if (type === ModbusTypes.TCP && data.property && data.property.broker_mode) {
+                return _writeMemoryBroker(memoryAddress, start, value).then(resolve).catch(reject);
+            }
             if (memoryAddress === ModbusMemoryAddress.CoilStatus) {                      // Coil Status (Read/Write 000001-065536)
                 client.writeCoil(start, value).then(res => {
                     resolve();
@@ -777,6 +796,245 @@ function MODBUSclient(_data, _logger, _events, _runtime) {
         working = check;
         overloading = 0;
         return true;
+    }
+
+
+    var _startBrokerServer = function (callback) {
+        const listenPort = parseInt(data.property.broker_port) || 502;
+        try {
+            _closeBrokerServer();
+            brokerServer = net.createServer((socket) => {
+                logger.info(`'${data.name}' broker client connected from ${socket.remoteAddress}:${socket.remotePort}`, true);
+                _attachBrokerSocket(socket);
+            });
+            brokerServer.on('error', (err) => {
+                logger.error(`'${data.name}' broker listener error! ${err}`);
+            });
+            brokerServer.listen(listenPort, '0.0.0.0', () => {
+                logger.info(`'${data.name}' broker listener active on 0.0.0.0:${listenPort}`, true);
+                _emitStatus('connect-off');
+                callback();
+            });
+        } catch (err) {
+            callback(err);
+        }
+    }
+
+    var _attachBrokerSocket = function (socket) {
+        if (brokerSocket && !brokerSocket.destroyed) {
+            brokerSocket.destroy();
+        }
+        _resetBrokerState();
+        brokerSocket = socket;
+        brokerSocket.setNoDelay(true);
+        brokerSocket.setKeepAlive(true);
+        _emitStatus('connect-ok');
+
+        brokerSocket.on('data', (chunk) => {
+            _onBrokerData(chunk);
+        });
+        brokerSocket.on('error', (err) => {
+            logger.error(`'${data.name}' broker socket error! ${err}`);
+            _closeBrokerSocket();
+            _emitStatus('connect-off');
+        });
+        brokerSocket.on('close', () => {
+            _closeBrokerSocket();
+            _emitStatus('connect-off');
+        });
+    }
+
+    var _closeBrokerSocket = function () {
+        if (brokerSocket) {
+            try { brokerSocket.removeAllListeners(); } catch { }
+            try { brokerSocket.destroy(); } catch { }
+        }
+        brokerSocket = null;
+        _resetBrokerState();
+    }
+
+    var _closeBrokerServer = function () {
+        _closeBrokerSocket();
+        if (brokerServer) {
+            try { brokerServer.close(); } catch { }
+            brokerServer = null;
+        }
+    }
+
+    var _resetBrokerState = function () {
+        brokerRxBuffer = Buffer.alloc(0);
+        if (brokerRequest) {
+            if (brokerRequest.timer) {
+                clearTimeout(brokerRequest.timer);
+            }
+            if (brokerRequest.reject) {
+                brokerRequest.reject(new Error('broker socket closed'));
+            }
+        }
+        brokerRequest = null;
+    }
+
+    var _onBrokerData = function (chunk) {
+        if (!chunk || !chunk.length) {
+            return;
+        }
+        brokerRxBuffer = Buffer.concat([brokerRxBuffer, chunk]);
+        if (!brokerRequest) {
+            return;
+        }
+        const parsed = _extractBrokerFrame();
+        if (parsed && brokerRequest) {
+            const request = brokerRequest;
+            brokerRequest = null;
+            clearTimeout(request.timer);
+            request.resolve(parsed);
+        }
+    }
+
+    var _extractBrokerFrame = function () {
+        if (!brokerRequest || brokerRxBuffer.length < 5) {
+            return null;
+        }
+        for (let i = 0; i <= brokerRxBuffer.length - 5; i++) {
+            const unitId = brokerRxBuffer[i];
+            const fn = brokerRxBuffer[i + 1];
+            let expectedLength = 0;
+            if (fn === 0x01 || fn === 0x02 || fn === 0x03 || fn === 0x04) {
+                const byteCount = brokerRxBuffer[i + 2];
+                expectedLength = 3 + byteCount + 2;
+            } else if (fn === 0x05 || fn === 0x06 || fn === 0x10) {
+                expectedLength = 8;
+            } else if (fn & 0x80) {
+                expectedLength = 5;
+            } else {
+                continue;
+            }
+            if (i + expectedLength > brokerRxBuffer.length) {
+                return null;
+            }
+            const frame = brokerRxBuffer.slice(i, i + expectedLength);
+            if (_crc16(frame.slice(0, -2)) !== frame.readUInt16LE(frame.length - 2)) {
+                continue;
+            }
+            if (brokerRequest.unitId !== undefined && brokerRequest.unitId !== unitId) {
+                brokerRxBuffer = brokerRxBuffer.slice(i + expectedLength);
+                continue;
+            }
+            brokerRxBuffer = brokerRxBuffer.slice(i + expectedLength);
+            return frame;
+        }
+        if (brokerRxBuffer.length > 2048) {
+            brokerRxBuffer = Buffer.alloc(0);
+        }
+        return null;
+    }
+
+    var _sendRtuRequest = function (pdu, unitId) {
+        return new Promise((resolve, reject) => {
+            if (!brokerSocket || brokerSocket.destroyed) {
+                return reject(new Error('broker socket not connected'));
+            }
+            if (brokerRequest) {
+                return reject(new Error('broker busy'));
+            }
+            const uid = unitId || parseInt(data.property.slaveid) || 1;
+            const payload = Buffer.concat([Buffer.from([uid]), pdu]);
+            const crc = _crc16(payload);
+            const frame = Buffer.concat([payload, Buffer.from([crc & 0xFF, (crc >> 8) & 0xFF])]);
+            const timeout = parseInt(data.property.modbus_timeout_ms) || 2000;
+            brokerRequest = {
+                unitId: uid,
+                timer: setTimeout(() => {
+                    if (brokerRequest) {
+                        brokerRequest = null;
+                        reject(new Error(`modbus timeout ${timeout}ms`));
+                    }
+                }, timeout),
+                resolve,
+                reject
+            };
+            brokerSocket.write(frame, (err) => {
+                if (err && brokerRequest) {
+                    clearTimeout(brokerRequest.timer);
+                    brokerRequest = null;
+                    reject(err);
+                }
+            });
+        });
+    }
+
+    var _readMemoryBroker = async function (memoryAddress, start, size, vars) {
+        let fn = 0;
+        if (memoryAddress === ModbusMemoryAddress.CoilStatus) fn = 0x01;
+        else if (memoryAddress === ModbusMemoryAddress.DigitalInputs) fn = 0x02;
+        else if (memoryAddress === ModbusMemoryAddress.InputRegisters) fn = 0x04;
+        else if (memoryAddress === ModbusMemoryAddress.HoldingRegisters) fn = 0x03;
+        else throw new Error('invalid memory address');
+
+        const pdu = Buffer.from([fn, (start >> 8) & 0xFF, start & 0xFF, (size >> 8) & 0xFF, size & 0xFF]);
+        const frame = await _sendRtuRequest(pdu);
+        const responseFn = frame[1];
+        if (responseFn & 0x80) {
+            throw new Error(`modbus exception ${frame[2]}`);
+        }
+        const dataBuffer = frame.slice(3, frame.length - 2);
+        vars.map(v => {
+            if (memoryAddress === ModbusMemoryAddress.CoilStatus || memoryAddress === ModbusMemoryAddress.DigitalInputs) {
+                let bitoffset = Math.trunc((v.offset - start) / 8);
+                let bit = (v.offset - start) % 8;
+                let value = datatypes[v.type].parser(dataBuffer, bitoffset, bit);
+                v.changed = value !== v.rawValue;
+                v.rawValue = value;
+            } else {
+                let byteoffset = (v.offset - start) * 2;
+                let buffer = Buffer.from(dataBuffer.slice(byteoffset, byteoffset + datatypes[v.type].bytes));
+                let value = datatypes[v.type].parser(buffer);
+                v.changed = value !== v.rawValue;
+                v.rawValue = value;
+            }
+        });
+        return vars;
+    }
+
+    var _writeMemoryBroker = async function (memoryAddress, start, value) {
+        let pdu;
+        if (memoryAddress === ModbusMemoryAddress.CoilStatus) {
+            const boolVal = Array.isArray(value) ? !!value[0] : !!value;
+            pdu = Buffer.from([0x05, (start >> 8) & 0xFF, start & 0xFF, boolVal ? 0xFF : 0x00, 0x00]);
+        } else if (memoryAddress === ModbusMemoryAddress.HoldingRegisters) {
+            if (value.length > 2 || data.property.forceFC16) {
+                const regs = Array.isArray(value) ? value : [value];
+                const bytes = Buffer.alloc(regs.length * 2);
+                regs.forEach((r, idx) => bytes.writeUInt16BE(parseInt(r), idx * 2));
+                pdu = Buffer.concat([Buffer.from([0x10, (start >> 8) & 0xFF, start & 0xFF, (regs.length >> 8) & 0xFF, regs.length & 0xFF, bytes.length]), bytes]);
+            } else {
+                const val = Array.isArray(value) ? parseInt(value[0]) : parseInt(value);
+                pdu = Buffer.from([0x06, (start >> 8) & 0xFF, start & 0xFF, (val >> 8) & 0xFF, val & 0xFF]);
+            }
+        } else {
+            throw new Error('invalid write memory address for broker mode');
+        }
+        const frame = await _sendRtuRequest(pdu);
+        const responseFn = frame[1];
+        if (responseFn & 0x80) {
+            throw new Error(`modbus exception ${frame[2]}`);
+        }
+    }
+
+    var _crc16 = function (buffer) {
+        let crc = 0xFFFF;
+        for (let pos = 0; pos < buffer.length; pos++) {
+            crc ^= buffer[pos];
+            for (let i = 0; i < 8; i++) {
+                if ((crc & 0x0001) !== 0) {
+                    crc >>= 1;
+                    crc ^= 0xA001;
+                } else {
+                    crc >>= 1;
+                }
+            }
+        }
+        return crc;
     }
 
     const formatAddress = function (address, token) { return token + '-' + address; }
