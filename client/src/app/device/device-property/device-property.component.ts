@@ -77,6 +77,7 @@ export class DevicePropertyComponent implements OnInit, OnDestroy {
 	hostInterfaces = [];
 	modbusRtuOptionType = [ModbusOptionType.SerialPort, ModbusOptionType.RTUBufferedPort, ModbusOptionType.AsciiPort];
 	modbusTcpOptionType = [ModbusOptionType.TcpPort, ModbusOptionType.UdpPort, ModbusOptionType.TcpRTUBufferedPort, ModbusOptionType.TelnetPort];
+	modbusTimeoutDefault = 2000;
 	modbusReuseModeType = ModbusReuseModeType;
     redisReadModeType = RedisReadModeType;
     redisReadModeSimple = RedisReadModeType.simple;
@@ -199,6 +200,15 @@ export class DevicePropertyComponent implements OnInit, OnDestroy {
             }
             if (!this.data.device.property.forceFC16) {
                 this.data.device.property.forceFC16 = false;
+            }
+            if (this.data.device.property.broker_mode === undefined || this.data.device.property.broker_mode === null) {
+                this.data.device.property.broker_mode = false;
+            }
+            if (!this.data.device.property.broker_port) {
+                this.data.device.property.broker_port = 502;
+            }
+            if (!this.data.device.property.modbus_timeout_ms) {
+                this.data.device.property.modbus_timeout_ms = this.modbusTimeoutDefault;
             }
         }
 		if (this.data.device.type === DeviceType.REDIS) {
